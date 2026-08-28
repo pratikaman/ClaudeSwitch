@@ -19,13 +19,8 @@
 
 You have a personal Claude account. And a work one. And that third one you made
 "just to test something" four months ago. They live in different config folders,
-and you switch between them using shell aliases you named while sleep-deprived:
-
-```zsh
-alias bitch='claude --dangerously-skip-permissions'
-alias octopussy='CLAUDE_CONFIG_DIR=~/.claude-side-chick command claude'
-alias sidekick='CLAUDE_CONFIG_DIR=~/.claude-sidekick command claude'
-```
+and you switch between them with hand-rolled shell aliases you named while
+sleep-deprived.
 
 Six months later nobody remembers which is which, and nobody finds out an
 account is out of weekly limit until Claude announces it mid-thought.

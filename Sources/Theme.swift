@@ -194,8 +194,8 @@ struct Monogram: View {
     let color: Color
     var size: CGFloat = 34
 
-    /// First letter of each word when the name has separators, so "side-chick"
-    /// and "sidekick" don't both come out as "SI".
+    /// First letter of each word when the name has separators, so "work-alt"
+    /// and "workday" don't both come out as "WO".
     private var initials: String {
         let parts = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         if parts.count >= 2 {

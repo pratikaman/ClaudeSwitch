@@ -56,7 +56,7 @@ enum Discovery {
         )
     }
 
-    /// A readable default name for a dir: ~/.claude-side-chick -> "side-chick".
+    /// A readable default name for a dir: ~/.claude-work -> "work".
     static func derivedName(for dir: String) -> String {
         if dir == defaultDir { return "default" }
         let base = (dir as NSString).lastPathComponent
