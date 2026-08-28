@@ -74,10 +74,6 @@ first time: right-click the app → **Open** → Open.
 Access tokens are read from the keychain only to make a single usage request.
 They're never cached, written to disk, or logged. The app has no logging at all.
 
-## The mascot
-
-He wears glasses. He has three legs. He is doing his best.
-
 ---
 
 MIT. Built on a Mac, for a Mac, by someone with too many Claude accounts.
