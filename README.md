@@ -1,11 +1,19 @@
-<img src="docs/icon.png" width="96" align="right" alt="ClaudeSwitch">
+<p align="center">
+  <img src="docs/icon.png" width="112" alt="ClaudeSwitch">
+</p>
 
-# ClaudeSwitch
+<h1 align="center">ClaudeSwitch</h1>
 
-**One Mac. Several Claude Code accounts. No idea which one still has juice.**
+<p align="center">
+  <b>One Mac. Several Claude Code accounts. No idea which one still has juice.</b>
+</p>
 
-A macOS menu bar app that answers the only question that actually matters at
-2am: *which of my accounts can I still use?*
+<p align="center">
+  A macOS menu bar app that answers the only question that actually matters at 2am:<br>
+  <i>which of my accounts can I still use?</i>
+</p>
+
+---
 
 ## The problem
 
