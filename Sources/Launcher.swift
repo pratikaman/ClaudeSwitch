@@ -33,12 +33,14 @@ enum Launcher {
     }
 
     /// Writes the launch script for a profile and returns its path.
-    static func writeScript(for profile: Profile, prefs: Prefs, overrideCommand: String? = nil) throws -> String {
+    static func writeScript(for profile: Profile, prefs: Prefs,
+                            overrideCommand: String? = nil,
+                            overrideWorkingDir: String? = nil) throws -> String {
         try FileManager.default.createDirectory(at: Paths.launchScripts, withIntermediateDirectories: true)
 
         let url = Paths.launchScripts.appendingPathComponent("\(scriptSlug(for: profile)).command")
 
-        let workdir = profile.workingDir ?? NSHomeDirectory()
+        let workdir = overrideWorkingDir ?? profile.workingDir ?? NSHomeDirectory()
         var payload = overrideCommand ?? profile.command
         if prefs.keepShellOpen {
             payload += "; echo; echo \"[claudeswitch] \(profile.name) session ended\"; exec /bin/zsh -i"
@@ -68,9 +70,12 @@ enum Launcher {
 
     /// Opens the script in the configured terminal.
     @discardableResult
-    static func launch(_ profile: Profile, prefs: Prefs, overrideCommand: String? = nil) -> String? {
+    static func launch(_ profile: Profile, prefs: Prefs, overrideCommand: String? = nil,
+                       overrideWorkingDir: String? = nil) -> String? {
         let script: String
-        do { script = try writeScript(for: profile, prefs: prefs, overrideCommand: overrideCommand) }
+        do { script = try writeScript(for: profile, prefs: prefs,
+                                      overrideCommand: overrideCommand,
+                                      overrideWorkingDir: overrideWorkingDir) }
         catch { return "could not write launch script: \(error.localizedDescription)" }
 
         var term = prefs.terminal
@@ -91,6 +96,13 @@ enum Launcher {
             result = run("/usr/bin/open", ["-na", term.bundlePath, "--args", script])
         }
         return result.ok ? nil : (result.stderr.isEmpty ? "launch failed" : result.stderr)
+    }
+
+    /// Reopens a past conversation in the directory it belongs to.
+    static func resume(_ session: RecentSession, profile: Profile, prefs: Prefs) -> String? {
+        launch(profile, prefs: prefs,
+               overrideCommand: "command claude --resume \(shellQuote(session.sessionID))",
+               overrideWorkingDir: session.cwd)
     }
 
     /// Runs the interactive login flow for a config dir in a terminal window.

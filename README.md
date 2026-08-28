@@ -33,6 +33,10 @@ account is out of weekly limit until Claude announces it mid-thought.
 - Launches it in a terminal — or just hit ⌘1, ⌘2, ⌘3
 - Quietly tells you when two "different" accounts are actually the same account
   sharing one allowance, which is a thing that happens
+- **Tells you before you hit a wall** — checks in the background and alerts when
+  a limit gets close, and again when it frees up
+- **Picks up where you left off** — lists your recent conversations per account
+  and resumes one in the directory it belongs to
 
 ## What it deliberately does *not* do
 

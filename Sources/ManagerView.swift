@@ -497,6 +497,72 @@ struct SettingsTab: View {
 
                 Hairline()
 
+                Section(title: "LIMIT ALERTS") {
+                    VStack(alignment: .leading, spacing: 11) {
+                        ToggleRow(title: "Tell me when a limit is close",
+                                  subtitle: "Checks in the background and alerts on a crossing",
+                                  isOn: Binding(get: { state.prefs.notifyEnabled },
+                                                set: { state.enableNotifications($0) }))
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Alert above")
+                                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                Text("Of whichever limit is closest to biting")
+                                    .font(.system(size: 10)).foregroundStyle(Theme.dim)
+                            }
+                            Spacer()
+                            segmentedPills([("75%", 75.0), ("85%", 85.0), ("95%", 95.0)],
+                                           current: state.prefs.notifyThreshold, width: 40) {
+                                state.prefs.notifyThreshold = $0; state.savePrefs()
+                            }
+                        }
+                        ToggleRow(title: "Also tell me when it frees up",
+                                  subtitle: "When a window resets and you have room again",
+                                  isOn: Binding(get: { state.prefs.notifyOnReset },
+                                                set: { state.prefs.notifyOnReset = $0; state.savePrefs() }))
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Check every")
+                                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                Text("Kept well inside the endpoint's rate limit")
+                                    .font(.system(size: 10)).foregroundStyle(Theme.dim)
+                            }
+                            Spacer()
+                            segmentedPills([("10m", 10.0), ("15m", 15.0), ("30m", 30.0), ("1h", 60.0)],
+                                           current: state.prefs.backgroundPollMinutes, width: 38) {
+                                state.prefs.backgroundPollMinutes = $0
+                                state.savePrefs()
+                                state.startPolling(force: true)
+                            }
+                        }
+                        HStack(spacing: 8) {
+                            PillButton(title: "send a test alert", symbol: "bell.badge",
+                                       color: Theme.brand) { state.sendTestNotification() }
+                            if !state.notifyStatus.isEmpty {
+                                Text(state.notifyStatus)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(state.notifyStatus == "sent" ? Theme.brand : Theme.amber)
+                            }
+                            Spacer()
+                        }
+                        Text("The app is ad-hoc signed, so macOS never registers it for native notifications — alerts are posted through AppleScript instead, and the menu bar shows a “!” regardless.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.faint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Hairline()
+
+                Section(title: "RECENT SESSIONS") {
+                    ToggleRow(title: "Offer to resume past conversations",
+                              subtitle: "Reads each account's transcripts to list what you were last doing",
+                              isOn: Binding(get: { state.prefs.showRecentSessions },
+                                            set: { state.prefs.showRecentSessions = $0; state.savePrefs() }))
+                }
+
+                Hairline()
+
                 Section(title: "WHAT CLAUDESWITCH WON'T DO") {
                     Text("ClaudeSwitch never edits ~/.claude, never swaps keychain entries, and never rewrites aliases you wrote yourself. Picking an account only sets CLAUDE_CONFIG_DIR for the terminal window it opens — and the default account launches with that variable unset, so it matches a plain `claude`.")
                         .font(.system(size: 11))

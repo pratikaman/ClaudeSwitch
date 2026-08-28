@@ -68,6 +68,16 @@ struct ProfileRow: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Launch") { state.launch(profile) }
+            let recent = state.sessions[profile.configDir] ?? []
+            if !recent.isEmpty {
+                Menu("Resume") {
+                    ForEach(recent) { session in
+                        Button("\(session.title)  —  \(session.projectName)") {
+                            state.resume(session, in: profile)
+                        }
+                    }
+                }
+            }
             Button("Sign in / switch account…") { state.signIn(profile) }
             Divider()
             Button("Open config folder") { Launcher.revealInFinder(profile.configDir) }
@@ -187,8 +197,49 @@ struct HeroBlock: View {
             }
             .keyboardShortcut(.return, modifiers: [])
             .padding(.top, 2)
+
+            if state.prefs.showRecentSessions,
+               let last = state.sessions[profile.configDir]?.first {
+                ResumeRow(session: last, profile: profile)
+            }
         }
         .padding(.horizontal, 14)
+    }
+}
+
+/// "pick up where you left off" — resumes a past conversation in its own
+/// directory, rather than starting a fresh session in the home folder.
+struct ResumeRow: View {
+    @EnvironmentObject var state: AppState
+    let session: RecentSession
+    let profile: Profile
+    @State private var hovering = false
+
+    var body: some View {
+        Button { state.resume(session, in: profile) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.brand)
+                Text(session.title)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(hovering ? .white : Theme.dim)
+                    .lineLimit(1)
+                Text(session.projectName)
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(Theme.faint)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softSurface(hovering, radius: 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Resume this conversation in \(session.shortCwd)")
     }
 }
 
@@ -221,6 +272,10 @@ struct MenuView: View {
                 }
             }
 
+            if !state.accountsAtLimit.isEmpty {
+                Hairline()
+                limitStrip
+            }
             if !state.orphans.isEmpty {
                 Hairline()
                 orphanStrip
@@ -301,6 +356,30 @@ struct MenuView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 14)
         .padding(.vertical, 22)
+    }
+
+    /// Shown when an account crosses the alert threshold. This is the layer
+    /// that needs no notification permission, so it always works.
+    private var limitStrip: some View {
+        let hit = state.accountsAtLimit
+        let worst = hit.compactMap(\.tightestBar).max { $0.percent < $1.percent }
+        return HoverRow { openManager(tab: 2) } content: {
+            HStack(spacing: 9) {
+                Capsule().fill(Theme.alert).frame(width: 2.5, height: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(hit.count == 1
+                         ? "\(hit[0].name) is at \(Int((worst?.percent ?? 0).rounded()))%"
+                         : "\(hit.count) accounts are near their limit")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(worst?.resetsAt.map { "\(worst?.label ?? "limit") · \(relativeReset($0))" }
+                         ?? "over \(Int(state.prefs.notifyThreshold))%")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Theme.dim)
+                }
+                Spacer()
+            }
+        }
     }
 
     /// An inline strip with an accent edge, rather than another outlined box.

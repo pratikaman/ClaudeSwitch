@@ -10,6 +10,10 @@ final class AppState: ObservableObject {
     @Published var isRefreshing = false
     @Published var lastError: String?
     @Published var managerTab = 0
+    /// Recent resumable conversations, keyed by config dir.
+    @Published var sessions: [String: [RecentSession]] = [:]
+    @Published var notifyStatus: String = ""
+    private var pollTimer: Timer?
 
     init() {
         if !prefs.terminal.isInstalled, let first = TerminalApp.installed.first {
@@ -17,6 +21,8 @@ final class AppState: ObservableObject {
             prefs.save()
         }
         reload()
+        // Alerts have to run whether or not the menu is ever opened.
+        startPolling()
     }
 
     // MARK: - Discovery
@@ -52,6 +58,15 @@ final class AppState: ObservableObject {
         }
 
         profiles = built
+        if prefs.showRecentSessions {
+            var found: [String: [RecentSession]] = [:]
+            for profile in built {
+                found[profile.configDir] = Sessions.recent(in: profile.configDir, limit: 5)
+            }
+            sessions = found
+        } else {
+            sessions = [:]
+        }
         Launcher.pruneScripts(keeping: built)
         recomputeOrphans()
         Task { await hydrateUsageFromCache() }
@@ -101,6 +116,95 @@ final class AppState: ObservableObject {
                 profiles[idx].usage = snap
             }
         }
+        await checkLimits()
+    }
+
+    // MARK: - Limit alerts
+
+    /// Notifies on a *crossing*, not on a level, so a limit sitting at 90%
+    /// doesn't re-alert on every poll.
+    private func checkLimits() async {
+        guard prefs.notifyEnabled else { return }
+        var seen = prefs.lastPercents
+        let threshold = prefs.notifyThreshold
+
+        for profile in profiles where profile.isSignedIn {
+            guard let bars = profile.usage?.bars else { continue }
+            for bar in bars {
+                let key = "\(profile.keychainService)|\(bar.kind)"
+                let now = bar.percent
+                let previous = seen[key]
+                seen[key] = now
+                guard let previous else { continue }   // nothing to compare yet
+
+                if previous < threshold, now >= threshold {
+                    let when = bar.resetsAt.map { " · \(relativeReset($0))" } ?? ""
+                    await Notifier.shared.post(
+                        title: "\(profile.name) is at \(Int(now.rounded()))%",
+                        body: "\(bar.label) limit\(when)",
+                        id: "\(key)-high")
+                } else if prefs.notifyOnReset, previous >= threshold, now < threshold {
+                    await Notifier.shared.post(
+                        title: "\(profile.name) has room again",
+                        body: "\(bar.label) dropped to \(Int(now.rounded()))%.",
+                        id: "\(key)-reset")
+                }
+            }
+        }
+        prefs.lastPercents = seen
+        prefs.save()
+    }
+
+    // MARK: - Background polling
+
+    /// Alerts are only useful if usage is checked while the menu is closed.
+    /// Paced well outside the endpoint's per-account rate limit.
+    func startPolling(force: Bool = false) {
+        // Opening the menu shouldn't restart the clock every time.
+        if !force, pollTimer != nil, prefs.notifyEnabled { return }
+        pollTimer?.invalidate()
+        pollTimer = nil
+        guard prefs.notifyEnabled else { return }
+        let interval = max(5, prefs.backgroundPollMinutes) * 60
+        pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.refreshUsage() }
+        }
+    }
+
+    func enableNotifications(_ on: Bool) {
+        prefs.notifyEnabled = on
+        prefs.save()
+        startPolling(force: true)
+        guard on else { notifyStatus = ""; return }
+        Task {
+            let granted = await Notifier.shared.requestAuthorization()
+            let status = await Notifier.shared.authorizationStatus()
+            notifyStatus = granted ? "" : "not allowed (\(Notifier.name(status))) — enable ClaudeSwitch in System Settings › Notifications"
+        }
+    }
+
+    func sendTestNotification() {
+        Task {
+            if let error = await Notifier.shared.post(
+                title: "ClaudeSwitch",
+                body: "This is what a limit alert looks like.",
+                id: "manual-test-\(Int(Date().timeIntervalSince1970))") {
+                notifyStatus = error
+            } else {
+                let status = await Notifier.shared.authorizationStatus()
+                notifyStatus = status == .authorized ? "sent" : "sent, but status is \(Notifier.name(status))"
+            }
+        }
+    }
+
+    // MARK: - Resume
+
+    func resume(_ session: RecentSession, in profile: Profile) {
+        lastError = Launcher.resume(session, profile: profile, prefs: prefs)
+        if lastError == nil {
+            prefs.lastUsed[profile.configDir] = Date()
+            prefs.save()
+        }
     }
 
     // MARK: - Launching
@@ -134,6 +238,23 @@ final class AppState: ObservableObject {
     func quotaSiblings(of profile: Profile) -> [Profile] {
         guard let uuid = profile.account?.accountUuid, !uuid.isEmpty else { return [] }
         return profiles.filter { $0.configDir != profile.configDir && $0.account?.accountUuid == uuid }
+    }
+
+    /// True when any signed-in account has crossed the alert threshold. Drives
+    /// the menu bar badge, which works with no notification permission at all.
+    var anyAccountAtLimit: Bool {
+        profiles.contains { p in
+            guard p.isSignedIn, let bars = p.usage?.bars else { return false }
+            return bars.contains { $0.percent >= prefs.notifyThreshold }
+        }
+    }
+
+    /// Accounts currently over the threshold, for the dropdown's alert row.
+    var accountsAtLimit: [Profile] {
+        profiles.filter { p in
+            guard p.isSignedIn, let bars = p.usage?.bars else { return false }
+            return bars.contains { $0.percent >= prefs.notifyThreshold }
+        }
     }
 
     /// Highest weekly usage across signed-in accounts, for the menu bar readout.

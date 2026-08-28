@@ -63,6 +63,50 @@ struct Prefs: Codable, Equatable {
     var lastUsed: [String: Date] = [:]
     var showPercentInMenuBar = true
 
+    // Limit alerts
+    var notifyEnabled = true
+    var notifyThreshold: Double = 85
+    var notifyOnReset = true
+    var backgroundPollMinutes: Double = 15
+    /// Last seen percentage per "keychainService|barKind", so a crossing can be
+    /// detected instead of re-alerting on every poll.
+    var lastPercents: [String: Double] = [:]
+
+    // Recent sessions
+    var showRecentSessions = true
+
+    /// Decodes field by field, falling back to the default for anything absent.
+    ///
+    /// Synthesized Codable requires *every* non-optional key to be present, so
+    /// shipping a new preference made the whole file fail to decode — load()
+    /// returned defaults and the next save silently destroyed the user's
+    /// display names, working dirs and history. Adding a field must never do
+    /// that, so decoding is tolerant by construction.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func v<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        let d = Prefs()
+        terminal             = v(.terminal, d.terminal)
+        defaultCommand       = v(.defaultCommand, d.defaultCommand)
+        keepShellOpen        = v(.keepShellOpen, d.keepShellOpen)
+        usageTTLSeconds      = v(.usageTTLSeconds, d.usageTTLSeconds)
+        showUsageInMenu      = v(.showUsageInMenu, d.showUsageInMenu)
+        extraPaths           = v(.extraPaths, d.extraPaths)
+        overrides            = v(.overrides, d.overrides)
+        lastUsed             = v(.lastUsed, d.lastUsed)
+        showPercentInMenuBar = v(.showPercentInMenuBar, d.showPercentInMenuBar)
+        notifyEnabled        = v(.notifyEnabled, d.notifyEnabled)
+        notifyThreshold      = v(.notifyThreshold, d.notifyThreshold)
+        notifyOnReset        = v(.notifyOnReset, d.notifyOnReset)
+        backgroundPollMinutes = v(.backgroundPollMinutes, d.backgroundPollMinutes)
+        lastPercents         = v(.lastPercents, d.lastPercents)
+        showRecentSessions   = v(.showRecentSessions, d.showRecentSessions)
+    }
+
+    init() {}
+
     static func load() -> Prefs {
         guard let data = try? Data(contentsOf: Paths.configFile),
               let p = try? JSONDecoder().decode(Prefs.self, from: data)
