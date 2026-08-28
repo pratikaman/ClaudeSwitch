@@ -37,9 +37,17 @@ enum Discovery {
             || FileManager.default.fileExists(atPath: path + "/settings.json")
     }
 
-    /// Reads oauthAccount out of <dir>/.claude.json.
+    /// Reads oauthAccount out of the config dir's .claude.json.
+    ///
+    /// The default profile is the exception: it keeps its config at
+    /// ~/.claude.json, *beside* ~/.claude rather than inside it. Only profiles
+    /// created via CLAUDE_CONFIG_DIR store .claude.json within the directory,
+    /// so looking only inside leaves the default account permanently unknown.
     static func account(in dir: String) -> Account? {
-        let path = dir + "/.claude.json"
+        var path = dir + "/.claude.json"
+        if dir == defaultDir, !FileManager.default.fileExists(atPath: path) {
+            path = home + "/.claude.json"
+        }
         guard let data = FileManager.default.contents(atPath: path),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let o = root["oauthAccount"] as? [String: Any],
