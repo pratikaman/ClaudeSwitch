@@ -63,6 +63,23 @@ macOS 14+. No Xcode project, no dependencies, no package manager — just `swift
 over a dozen Swift files. It's ad-hoc signed, so macOS will be suspicious the
 first time: right-click the app → **Open** → Open.
 
+### Or make an agent do it
+
+You already have one open. Paste this into Claude Code, Codex, Cursor, Gemini
+CLI, Copilot CLI, Aider — whichever is nearest:
+
+> Clone https://github.com/pratikaman/ClaudeSwitch somewhere sensible, run
+> `./build.sh --install`, and open `~/Applications/ClaudeSwitch.app`.
+> It's a macOS menu bar app: no Dock icon, no window on launch — look in the
+> menu bar for a small pixel creature. Building needs Swift from Xcode or the
+> Command Line Tools (`xcode-select --install`). It's ad-hoc signed, so if
+> Gatekeeper refuses, right-click the app in Finder and choose Open. When it's
+> running, tell me which Claude accounts it found and how much limit each has
+> left.
+
+Pleasingly recursive: you can spend one Claude account's quota installing the
+thing that tells you which Claude account still has quota.
+
 ## Where things live
 
 | Path | What |
