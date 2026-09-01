@@ -136,21 +136,4 @@ struct Profile: Identifiable, Equatable {
         b.kind == "5h" ? b.percent * 0.5 : b.percent
     }
 
-    var hasUsageData: Bool { !(usage?.bars.isEmpty ?? true) }
-
-    /// "5h 33% · week 39%" — the windows the headline bar isn't showing.
-    var otherBarsSummary: String? {
-        guard let bars = usage?.bars, let lead = tightestBar, bars.count > 1 else { return nil }
-        let rest = bars.filter { $0.kind != lead.kind }
-            .map { "\($0.label) \(Int($0.percent.rounded()))%" }
-        return rest.isEmpty ? nil : rest.joined(separator: " · ")
-    }
-
-    /// Lower is better. Signed-out profiles, and ones we have no numbers for,
-    /// sort last — "unknown" is not the same as "empty".
-    var headroomScore: Double {
-        guard isSignedIn else { return .infinity }
-        guard let bars = usage?.bars, !bars.isEmpty else { return .infinity }
-        return bars.map(weight).max() ?? .infinity
-    }
 }

@@ -89,8 +89,6 @@ struct ProfileRow: View {
         .help("Opens \(state.prefs.terminal.displayName) with CLAUDE_CONFIG_DIR=\(profile.shortDir)")
     }
 
-    /// One bar — the limit closest to biting — plus the rest as text. Three
-    /// stacked bars per row made every account look like a chart.
     @ViewBuilder
     private var detail: some View {
         if !profile.isSignedIn {
@@ -101,145 +99,22 @@ struct ProfileRow: View {
             .foregroundStyle(Theme.amber)
             .padding(.top, 1)
         } else if state.prefs.showUsageInMenu {
-            if let lead = profile.tightestBar {
-                MiniBar(bar: lead, height: 5).padding(.top, 2)
-                HStack(spacing: 5) {
-                    if let rest = profile.otherBarsSummary {
-                        Text(rest).font(.system(size: 9)).foregroundStyle(Theme.faint)
-                    }
+            if let usage = profile.usage, !usage.bars.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(usage.bars) { MiniBar(bar: $0, height: 5) }
                     if !siblings.isEmpty {
-                        Text("· shares quota with \(siblings.map(\.name).joined(separator: ", "))")
+                        Text("shares quota with \(siblings.map(\.name).joined(separator: ", "))")
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.purple)
                     }
                 }
+                .padding(.top, 2)
             } else {
                 Text(profile.usage?.friendlyError ?? "loading usage…")
                     .font(.system(size: 9.5))
                     .foregroundStyle(Theme.faint)
             }
         }
-    }
-}
-
-// MARK: - Hero
-
-struct HeroBlock: View {
-    @EnvironmentObject var state: AppState
-    let profile: Profile
-
-    private var tightest: LimitBar? { profile.tightestBar }
-    private var vibe: (word: String, color: Color) {
-        guard profile.isSignedIn else { return ("sign in first", Theme.amber) }
-        guard let pct = tightest?.percent else { return ("no data yet", Theme.dim) }
-        return Theme.vibe(pct)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: profile.isSignedIn ? "MOST HEADROOM" : "NEEDS A LOGIN")
-
-            // Name and headline number share one baseline; hanging the number
-            // off the tiny section label left it floating.
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(profile.name)
-                    .font(.system(size: 29, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Spacer(minLength: 0)
-                if let bar = tightest {
-                    Text("\(Int(bar.percent.rounded()))%")
-                        .font(.system(size: 33, weight: .black, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                }
-            }
-            .padding(.top, -9)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(profile.subtitle)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 0)
-                if let bar = tightest {
-                    Text("of \(bar.label) used")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.faint)
-                }
-            }
-            .padding(.top, -6)
-
-            HStack(spacing: 4) {
-                Circle().fill(vibe.color).frame(width: 5, height: 5)
-                Text(vibe.word)
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                if let reset = tightest?.resetsAt {
-                    Text("· \(relativeReset(reset))")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.faint)
-                }
-            }
-            .foregroundStyle(vibe.color)
-
-            if let usage = profile.usage, !usage.bars.isEmpty {
-                VStack(spacing: 5) {
-                    ForEach(usage.bars.prefix(3)) { MiniBar(bar: $0, height: 6) }
-                }
-            }
-
-            ActionButton(title: profile.isSignedIn ? "Launch \(profile.name)" : "Sign in to \(profile.name)",
-                         symbol: profile.isSignedIn ? "play.fill" : "person.badge.key.fill",
-                         color: profile.isSignedIn ? Theme.brand : Theme.amber) {
-                profile.isSignedIn ? state.launch(profile) : state.signIn(profile)
-            }
-            .keyboardShortcut(.return, modifiers: [])
-            .padding(.top, 2)
-
-            if state.prefs.showRecentSessions,
-               let last = state.sessions[profile.configDir]?.first {
-                ResumeRow(session: last, profile: profile)
-            }
-        }
-        .padding(.horizontal, 14)
-    }
-}
-
-/// "pick up where you left off" — resumes a past conversation in its own
-/// directory, rather than starting a fresh session in the home folder.
-struct ResumeRow: View {
-    @EnvironmentObject var state: AppState
-    let session: RecentSession
-    let profile: Profile
-    @State private var hovering = false
-
-    var body: some View {
-        Button { state.resume(session, in: profile) } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.uturn.backward.circle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.brand)
-                Text(session.title)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(hovering ? .white : Theme.dim)
-                    .lineLimit(1)
-                Text(session.projectName)
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(Theme.faint)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .softSurface(hovering, radius: 9)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("Resume this conversation in \(session.shortCwd)")
     }
 }
 
@@ -256,10 +131,6 @@ struct MenuView: View {
             if state.profiles.isEmpty {
                 emptyState
             } else {
-                if let hero = state.heroProfile {
-                    HeroBlock(profile: hero).padding(.bottom, 14)
-                }
-
                 Hairline()
                 sectionHeader
 

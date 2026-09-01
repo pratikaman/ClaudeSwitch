@@ -217,22 +217,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// The account to reach for right now: signed in, most rate-limit headroom,
-    /// ties broken by whichever you used most recently.
-    var heroProfile: Profile? {
-        let signedIn = profiles.filter(\.isSignedIn)
-        guard !signedIn.isEmpty else { return profiles.first }
-        // Prefer accounts whose limits we actually know; fall back to the rest.
-        let withData = signedIn.filter(\.hasUsageData)
-        let candidates = withData.isEmpty ? signedIn : withData
-        return candidates.min { a, b in
-            if a.headroomScore != b.headroomScore { return a.headroomScore < b.headroomScore }
-            let ta = prefs.lastUsed[a.configDir] ?? .distantPast
-            let tb = prefs.lastUsed[b.configDir] ?? .distantPast
-            return ta > tb
-        }
-    }
-
     /// Config dirs signed into the same Anthropic account share one quota.
     /// Worth surfacing — two profiles is not two allowances.
     func quotaSiblings(of profile: Profile) -> [Profile] {
