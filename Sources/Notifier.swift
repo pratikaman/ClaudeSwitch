@@ -70,7 +70,7 @@ final class Notifier {
         }
     }
 
-    /// Launch with CLAUDESWITCH_NOTIFY_SELFTEST=1 to write the authorization
+    /// Launch with GAUGE_NOTIFY_SELFTEST=1 to write the authorization
     /// status and delivery result to disk. Used to verify notifications work at
     /// all in an ad-hoc signed bundle, where they cannot be clicked to check.
     func selfTest() async {
@@ -80,7 +80,7 @@ final class Notifier {
         trace("requestAuthorization returned \(granted)")
         let status = await authorizationStatus()
         trace("status = \(Self.name(status))")
-        let error = await post(title: "ClaudeSwitch",
+        let error = await post(title: "Gauge",
                                body: "Notifications are working.",
                                id: "selftest")
         trace("post returned \(error ?? "success")")

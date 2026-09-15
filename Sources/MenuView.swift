@@ -19,16 +19,16 @@ struct ProfileRow: View {
             profile.isSignedIn ? state.launch(profile) : state.signIn(profile)
         } label: {
             HStack(alignment: .top, spacing: 11) {
-                Monogram(text: profile.name, color: accent, size: 30)
+                ProviderMark(provider: profile.provider, size: 32)
                     .padding(.top, 1)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 5) {
                         Text(profile.name)
-                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
-                        if let cred = profile.credential {
+                        if let cred = profile.credential, !cred.tierLabel.isEmpty {
                             Chip(text: cred.tierLabel, color: accent)
                         }
                         if profile.isDefault, profile.name.lowercased() != "default" {
@@ -43,7 +43,7 @@ struct ProfileRow: View {
                     }
 
                     HStack(spacing: 5) {
-                        Text(profile.subtitle)
+                        Text("\(profile.provider.title) · \(profile.subtitle)")
                             .font(.system(size: 10.5))
                             .foregroundStyle(Theme.dim)
                             .lineLimit(1)
@@ -59,12 +59,13 @@ struct ProfileRow: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.vertical, 13)
             .frame(maxWidth: .infinity, alignment: .leading)
             .softSurface(hovering)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(profile.provider != .claude && profile.usage == nil && state.isRefreshing)
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Launch") { state.launch(profile) }
@@ -86,12 +87,16 @@ struct ProfileRow: View {
                 NSPasteboard.general.setString(profile.configDir, forType: .string)
             }
         }
-        .help("Opens \(state.prefs.terminal.displayName) with CLAUDE_CONFIG_DIR=\(profile.shortDir)")
+        .help("Opens \(profile.provider.title) in \(state.prefs.terminal.displayName) using \(profile.shortDir)")
     }
 
     @ViewBuilder
     private var detail: some View {
-        if !profile.isSignedIn {
+        if profile.provider != .claude, !profile.isSignedIn {
+            Text(profile.usage?.friendlyError ?? "checking \(profile.provider.title) sign-in…")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.amber)
+        } else if !profile.isSignedIn {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.right.circle.fill").font(.system(size: 10))
                 Text("tap to sign in").font(.system(size: 10.5, weight: .bold, design: .rounded))
@@ -100,15 +105,19 @@ struct ProfileRow: View {
             .padding(.top, 1)
         } else if state.prefs.showUsageInMenu {
             if let usage = profile.usage, !usage.bars.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 9) {
                     ForEach(usage.bars) { MiniBar(bar: $0, height: 5) }
+                    if let error = usage.error {
+                        Text("\(error) · last read \(shortDate(usage.fetchedAt))")
+                            .font(.system(size: 9)).foregroundStyle(Theme.amber)
+                    }
                     if !siblings.isEmpty {
                         Text("shares quota with \(siblings.map(\.name).joined(separator: ", "))")
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.purple)
                     }
                 }
-                .padding(.top, 2)
+                .padding(.top, 7)
             } else {
                 Text(profile.usage?.friendlyError ?? "loading usage…")
                     .font(.system(size: 9.5))
@@ -128,26 +137,28 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            if state.profiles.isEmpty {
+            ProviderFilter(selection: $state.providerFilter, profiles: state.profiles)
+                .padding(.horizontal, 14).padding(.bottom, 12)
+
+            if state.visibleProfiles.isEmpty {
                 emptyState
             } else {
                 Hairline()
                 sectionHeader
 
-                if state.profiles.count > 4 {
-                    ScrollView { accountList }
-                        .frame(height: 300)
-                        .scrollIndicators(.never)
-                } else {
+                ScrollView {
                     accountList
                 }
+                .frame(maxHeight: 390)
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollIndicators(.visible)
             }
 
             if !state.accountsAtLimit.isEmpty {
                 Hairline()
                 limitStrip
             }
-            if !state.orphans.isEmpty {
+            if state.providerFilter == .claude, !state.orphans.isEmpty {
                 Hairline()
                 orphanStrip
             }
@@ -159,15 +170,16 @@ struct MenuView: View {
             Hairline()
             footer
         }
-        .frame(width: 356)
+        .frame(width: 400)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+        .tint(Theme.brand)
         .task { await state.refreshUsage() }
     }
 
     private var accountList: some View {
         VStack(spacing: 0) {
-            ForEach(Array(state.profiles.enumerated()), id: \.element.id) { i, p in
+            ForEach(Array(state.visibleProfiles.enumerated()), id: \.element.id) { i, p in
                 if i > 0 { Hairline(inset: 55) }
                 ProfileRow(profile: p, index: i)
                     .keyboardShortcut(i < 9 ? KeyEquivalent(Character("\(i + 1)")) : "0",
@@ -179,10 +191,14 @@ struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 7) {
-            MascotMark(height: 18)
-            Wordmark()
+            GaugeMark(height: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Wordmark(size: 21)
+                Text("AI usage, at a glance").font(.system(size: 10)).foregroundStyle(Theme.dim)
+            }
             Spacer()
             CircleButton(symbol: "arrow.clockwise") {
+                state.reload()
                 Task { await state.refreshUsage(force: true) }
             }
             .rotationEffect(.degrees(state.isRefreshing ? 360 : 0))
@@ -190,19 +206,20 @@ struct MenuView: View {
                        ? .linear(duration: 0.9).repeatForever(autoreverses: false)
                        : .default, value: state.isRefreshing)
             .help("Refresh usage")
+            .disabled(state.isRefreshing)
             CircleButton(symbol: "slider.horizontal.3") { openManager(tab: 0) }
                 .help("Manage accounts")
         }
         .padding(.horizontal, 14)
-        .padding(.top, 13)
-        .padding(.bottom, 14)
+        .padding(.top, 18)
+        .padding(.bottom, 17)
     }
 
     private var sectionHeader: some View {
         HStack {
-            SectionLabel(text: "ALL ACCOUNTS")
+            SectionLabel(text: state.providerFilter.map { "\($0.title) accounts" } ?? "All accounts")
             Spacer()
-            Text("\(state.profiles.filter(\.isSignedIn).count)/\(state.profiles.count) signed in")
+            Text(state.isRefreshing ? "Updating…" : "\(state.visibleProfiles.filter(\.isSignedIn).count) connected")
                 .font(.system(size: 9, weight: .medium, design: .rounded))
                 .foregroundStyle(Theme.faint)
         }
@@ -213,11 +230,11 @@ struct MenuView: View {
 
     private var emptyState: some View {
         VStack(spacing: 9) {
-            MascotMark(height: 40).opacity(0.5)
-            Text("No Claude accounts yet")
+            GaugeMark(height: 38).opacity(0.7)
+            Text(state.providerFilter.map { "Connect \($0.title)" } ?? "Your accounts, together")
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            Text("Add one and ClaudeSwitch will run the login flow for you.")
+            Text("Keep an eye on limits across Claude, Codex, and Grok. Connect an account to get started.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .multilineTextAlignment(.center)
@@ -233,7 +250,7 @@ struct MenuView: View {
     /// that needs no notification permission, so it always works.
     private var limitStrip: some View {
         let hit = state.accountsAtLimit
-        let worst = hit.compactMap(\.tightestBar).max { $0.percent < $1.percent }
+        let worst = hit.flatMap { $0.usage?.bars ?? [] }.max { $0.percent < $1.percent }
         return HoverRow { openManager(tab: 2) } content: {
             HStack(spacing: 9) {
                 Capsule().fill(Theme.alert).frame(width: 2.5, height: 26)
@@ -291,10 +308,9 @@ struct MenuView: View {
 
     private var footer: some View {
         HStack(spacing: 7) {
-            PillButton(title: "add", symbol: "plus", color: Theme.brand) { openManager(tab: 0) }
-            PillButton(title: "manage", symbol: "gearshape.fill") { openManager(tab: 0) }
+            PillButton(title: "Manage accounts", symbol: "square.grid.2x2", color: Theme.brand) { openManager(tab: 0) }
             Spacer()
-            PillButton(title: "quit", color: Theme.dim) { NSApp.terminate(nil) }
+            PillButton(title: "Quit", color: Theme.dim) { NSApp.terminate(nil) }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

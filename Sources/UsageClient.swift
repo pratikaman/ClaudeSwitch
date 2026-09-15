@@ -206,7 +206,7 @@ actor UsageClient {
     }
 
     private func loadCache() {
-        guard let data = try? Data(contentsOf: cacheURL),
+        guard let data = try? Data(contentsOf: Paths.readableFile("usage-cache.json")),
               let rows = try? JSONDecoder().decode([CacheRow].self, from: data) else { return }
         for row in rows {
             var snap = memo[row.service] ?? UsageSnapshot(bars: [], fetchedAt: row.fetchedAt, error: nil)

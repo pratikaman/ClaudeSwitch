@@ -1,22 +1,24 @@
 #!/bin/bash
-# Build ClaudeSwitch.app and (with --install) copy it to ~/Applications.
+# Build Gauge.app and (with --install) copy it to ~/Applications.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="build/ClaudeSwitch.app"
+APP="build/Gauge.app"
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -parse-as-library Sources/*.swift -o "$APP/Contents/MacOS/ClaudeSwitch"
+BUILD_ARCH="$(uname -m)"
+swiftc -O -parse-as-library -target "${BUILD_ARCH}-apple-macosx14.0" Sources/*.swift -o "$APP/Contents/MacOS/Gauge"
+swift tools/icon.swift build/GaugeIcon.iconset
+iconutil -c icns build/GaugeIcon.iconset -o "$APP/Contents/Resources/GaugeIcon.icns"
 cp Info.plist "$APP/Contents/Info.plist"
-cp Resources/*.png Resources/*.icns "$APP/Contents/Resources/" 2>/dev/null || true
 codesign --force -s - "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
     mkdir -p ~/Applications
-    pkill -x ClaudeSwitch 2>/dev/null || true
-    rm -rf ~/Applications/ClaudeSwitch.app
+    pkill -x Gauge 2>/dev/null || true
+    rm -rf ~/Applications/Gauge.app
     cp -R "$APP" ~/Applications/
-    echo "Installed to ~/Applications/ClaudeSwitch.app"
+    echo "Installed to ~/Applications/Gauge.app"
 fi

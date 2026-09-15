@@ -3,13 +3,25 @@ import Foundation
 enum Paths {
     static var support: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ClaudeSwitch", isDirectory: true)
+            .appendingPathComponent("Gauge", isDirectory: true)
     }
     static var launchScripts: URL {
         support.appendingPathComponent("launch", isDirectory: true)
     }
     static var configFile: URL {
         support.appendingPathComponent("config.json")
+    }
+    static var legacySupport: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ClaudeSwitch", isDirectory: true)
+    }
+
+    /// Read the old location only when Gauge has no file yet. Never overwrite
+    /// legacy data or replace an existing Gauge file with an older copy.
+    static func readableFile(_ name: String, current: URL = support, legacy: URL = legacySupport) -> URL {
+        let currentFile = current.appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: currentFile.path)
+            ? currentFile : legacy.appendingPathComponent(name)
     }
 }
 
@@ -59,6 +71,8 @@ struct Prefs: Codable, Equatable {
     var usageTTLSeconds: Double = 300
     var showUsageInMenu: Bool = true
     var extraPaths: [String] = []
+    var codexPaths: [String] = []
+    var grokPaths: [String] = []
     var overrides: [String: ProfileOverride] = [:]
     var lastUsed: [String: Date] = [:]
     var showPercentInMenuBar = true
@@ -94,6 +108,8 @@ struct Prefs: Codable, Equatable {
         usageTTLSeconds      = v(.usageTTLSeconds, d.usageTTLSeconds)
         showUsageInMenu      = v(.showUsageInMenu, d.showUsageInMenu)
         extraPaths           = v(.extraPaths, d.extraPaths)
+        codexPaths           = v(.codexPaths, d.codexPaths)
+        grokPaths            = v(.grokPaths, d.grokPaths)
         overrides            = v(.overrides, d.overrides)
         lastUsed             = v(.lastUsed, d.lastUsed)
         showPercentInMenuBar = v(.showPercentInMenuBar, d.showPercentInMenuBar)
@@ -108,7 +124,7 @@ struct Prefs: Codable, Equatable {
     init() {}
 
     static func load() -> Prefs {
-        guard let data = try? Data(contentsOf: Paths.configFile),
+        guard let data = try? Data(contentsOf: Paths.readableFile("config.json")),
               let p = try? JSONDecoder().decode(Prefs.self, from: data)
         else { return Prefs() }
         return p
@@ -117,6 +133,6 @@ struct Prefs: Codable, Equatable {
     func save() {
         try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(self) else { return }
-        try? data.write(to: Paths.configFile)
+        try? data.write(to: Paths.configFile, options: .atomic)
     }
 }

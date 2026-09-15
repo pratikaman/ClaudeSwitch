@@ -1,95 +1,118 @@
 <p align="center">
-  <img src="docs/icon.png" width="112" alt="ClaudeSwitch">
+  <img src="docs/gauge-icon.png" width="104" alt="Gauge icon">
 </p>
 
-<h1 align="center">ClaudeSwitch</h1>
+<h1 align="center">Gauge</h1>
+<p align="center">Claude, Codex, and Grok subscription usage in your Mac menu bar.</p>
 
-<p align="center">
-  <b>One Mac. Several Claude Code accounts. No idea which one still has juice.</b>
-</p>
+## What Gauge does
 
-<p align="center">
-  A macOS menu bar app that answers the only question that actually matters at 2am:<br>
-  <i>which of my accounts can I still use?</i>
-</p>
+- Shows usage windows, percentages used, and available reset times per account.
+- Filters accounts by provider, with independent sign-ins and configuration folders.
+- Opens an account in your preferred terminal; ⌘1–⌘9 open the visible accounts.
+- Checks usage in the background and alerts when limits cross your chosen threshold.
+- Keeps Claude session resume, shared-quota notices, and confirmed keychain cleanup.
 
----
+The interface uses a neutral meter icon, provider labels, readable usage bars,
+and an account manager with connection details tucked away until you need them.
 
-## The problem
+![Gauge account manager](docs/gauge-preview.png)
 
-You have a personal Claude account. And a work one. And that third one you made
-"just to test something" four months ago. They live in different config folders,
-and you switch between them with hand-rolled shell aliases you named while
-sleep-deprived.
+*Interface preview with synthetic accounts.*
 
-Six months later nobody remembers which is which, and nobody finds out an
-account is out of weekly limit until Claude announces it mid-thought.
+## Build and run
 
-## What it does
-
-- Lists every account, who it's signed in as, and what plan it's on
-- Shows **how much rate limit is left** on each one
-- Puts the account with the most headroom at the top, with one big button
-- Launches it in a terminal — or just hit ⌘1, ⌘2, ⌘3
-- Quietly tells you when two "different" accounts are actually the same account
-  sharing one allowance, which is a thing that happens
-- **Tells you before you hit a wall** — checks in the background and alerts when
-  a limit gets close, and again when it frees up
-- **Picks up where you left off** — lists your recent conversations per account
-  and resumes one in the directory it belongs to
-
-## What it deliberately does *not* do
-
-This is the important part.
-
-ClaudeSwitch **never edits `~/.claude`** and **never moves keychain entries
-around**. Picking an account only sets `CLAUDE_CONFIG_DIR` for the single
-terminal window it opens. Delete the app right now and every account still works
-exactly as before.
-
-There is no "switching", only "opening a terminal with the right environment
-variable" — same outcome, dramatically harder to get catastrophically wrong.
-
-## Install
+Requires **macOS 14+** and Swift from Xcode or Command Line Tools.
+There is no Xcode project, Swift package, or external Swift dependency.
 
 ```sh
 git clone https://github.com/pratikaman/ClaudeSwitch.git
 cd ClaudeSwitch
-./build.sh --install     # builds, then copies to ~/Applications
+./build.sh
+open build/Gauge.app
 ```
 
-macOS 14+. No Xcode project, no dependencies, no package manager — just `swiftc`
-over a dozen Swift files. It's ad-hoc signed, so macOS will be suspicious the
-first time: right-click the app → **Open** → Open.
+Look for the usage meter in the menu bar. Gauge has no Dock icon and does not
+open a window on startup. To install into `~/Applications`, run
+`./build.sh --install`. Builds are ad-hoc signed; if macOS asks, right-click
+Gauge in Finder and choose **Open**.
 
-### Or make an agent do it
+The app is now named Gauge; the repository URL remains ClaudeSwitch.
 
-You already have one open. Paste this into Claude Code, Codex, Cursor, Gemini
-CLI, Copilot CLI, Aider — whichever is nearest:
+## Connect accounts
 
-> Clone https://github.com/pratikaman/ClaudeSwitch somewhere sensible, run
-> `./build.sh --install`, and open `~/Applications/ClaudeSwitch.app`.
-> It's a macOS menu bar app: no Dock icon, no window on launch — look in the
-> menu bar for a small pixel creature. Building needs Swift from Xcode or the
-> Command Line Tools (`xcode-select --install`). It's ad-hoc signed, so if
-> Gatekeeper refuses, right-click the app in Finder and choose Open. When it's
-> running, tell me which Claude accounts it found and how much limit each has
-> left.
+Open **Manage accounts → Accounts**, select Claude, Codex, or Grok in the new
+account form, enter a name, and choose **Add & sign in**. Use **track existing
+folder** to connect a configuration folder elsewhere on disk. Refresh after
+signing in. Each account needs its own folder.
 
-Pleasingly recursive: you can spend one Claude account's quota installing the
-thing that tells you which Claude account still has quota.
+| Provider | Discovered folders | Usage source |
+|---|---|---|
+| Claude | `~/.claude`, `~/.claude-*` | Claude Code OAuth usage |
+| Codex | `~/.codex`, `~/.codex-*`, `CODEX_HOME` | Codex CLI account rate limits |
+| Grok | `~/.grok`, `~/.grok-*`, `GROK_HOME` | Grok Build subscription billing |
 
-## Where things live
+### Codex
 
-| Path | What |
+Install [Codex CLI](https://developers.openai.com/codex/cli) and sign in with
+ChatGPT. Gauge reads the windows returned by
+[`account/rateLimits/read`](https://learn.chatgpt.com/docs/app-server), including
+five-hour, weekly, and additional model-specific limits when available.
+API-key sign-ins do not expose ChatGPT subscription limits.
+
+### Grok subscriptions — experimental
+
+Install [Grok Build](https://docs.x.ai/build/overview) and run `grok login` with
+the account linked to your grok.com or X subscription. Gauge uses the CLI's ACP
+billing extension, also used by its `/usage` screen. The methods were checked
+against Grok Build **1.0.30**; a signed-in billing response still needs live
+verification. This vendor extension can change between CLI releases.
+
+Gauge displays Grok's reported subscription percentage. Missing or unrecognized
+data produces an unavailable message, never a fabricated zero. Browser logins
+are not imported, and xAI API spend is not included. The account manager also
+links to [Grok's Usage page](https://grok.com/?_s=usage).
+
+## Account isolation and stored data
+
+Claude launches use `CLAUDE_CONFIG_DIR`; Codex uses `CODEX_HOME`; Grok uses
+`GROK_HOME`. Default accounts clear their override, and Codex/Grok subscription
+launches clear API-key overrides. Their CLIs own authentication and refresh;
+Gauge never copies their tokens. Hiding a Codex or Grok account preserves its
+files and sign-in. Select its folder again to restore it.
+
+| Path under `~/Library/Application Support/Gauge/` | Contents |
 |---|---|
-| `~/Library/Application Support/ClaudeSwitch/config.json` | preferences and per-account overrides |
-| `~/Library/Application Support/ClaudeSwitch/usage-cache.json` | last known rate-limit numbers |
-| `~/Library/Application Support/ClaudeSwitch/launch/*.command` | generated launch scripts, rewritten each launch |
+| `config.json` | Preferences, account paths, names, and overrides |
+| `usage-cache.json` | Last successful Claude usage readings |
+| `launch/*.command` | Generated terminal launch scripts |
 
-Access tokens are read from the keychain only to make a single usage request.
-They're never cached, written to disk, or logged. The app has no logging at all.
+Codex and Grok readings are cached in memory. Connection failures retain the
+last successful reading where available, mark it with its timestamp, and do
+not generate threshold-crossing alerts. Tokens never enter Gauge's usage cache.
 
----
+**Upgrading from ClaudeSwitch:** Gauge reads existing preferences and the
+Claude usage cache from `~/Library/Application Support/ClaudeSwitch/` when the
+corresponding Gauge file does not exist. Future saves go to Gauge's folder;
+legacy files are preserved. Quit the old app to avoid duplicate polling.
 
-MIT. Built on a Mac, for a Mac, by someone with too many Claude accounts.
+## Development and verification
+
+```sh
+./build.sh                                  # compile, generate icon, and sign
+./test.sh                                   # offline tests
+build/tests/ProviderTests --render           # synthetic UI previews
+build/tests/ProviderTests --live-codex       # optional real Codex usage check
+```
+
+Offline tests cover preference migration, discovery, provider isolation,
+response parsing, missing data, RPC handshakes, timeouts, and sanitized errors.
+They use synthetic accounts and local CLI fixtures. The optional live check
+prints sign-in status and window count without identity or tokens.
+
+`Sources/` contains the SwiftUI views, application state, and provider clients.
+`tools/icon.swift` renders the new icon without external libraries. `build/`
+contains generated artifacts and is ignored by Git. Legacy artwork remains in
+`Resources/` but is no longer bundled.
+
+MIT licensed.

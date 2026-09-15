@@ -72,7 +72,7 @@ enum Discovery {
         return base.hasPrefix(".") ? String(base.dropFirst()) : base
     }
 
-    /// Scans ~/.zshrc for aliases that point at a config dir, so ClaudeSwitch can show
+    /// Scans ~/.zshrc for aliases that point at a config dir, so Gauge can show
     /// the shell command you already use for each profile. Read-only.
     static func aliases() -> [String: String] {   // configDir -> alias name
         guard let text = try? String(contentsOfFile: home + "/.zshrc", encoding: .utf8)

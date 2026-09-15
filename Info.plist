@@ -3,26 +3,26 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>ClaudeSwitch</string>
+    <string>Gauge</string>
     <key>CFBundleDisplayName</key>
-    <string>ClaudeSwitch</string>
+    <string>Gauge</string>
     <key>CFBundleIdentifier</key>
-    <string>com.pratikaman.claudeswitch</string>
+    <string>com.pratikaman.gauge</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleExecutable</key>
-    <string>ClaudeSwitch</string>
+    <string>Gauge</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
+    <string>GaugeIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>ClaudeSwitch — many heads, one Claude.</string>
+    <string>Gauge — AI usage at a glance.</string>
 </dict>
 </plist>

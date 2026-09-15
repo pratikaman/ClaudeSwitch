@@ -4,13 +4,12 @@ import AppKit
 // MARK: - Palette
 
 enum Theme {
-    static let bg         = Color(red: 0.055, green: 0.067, blue: 0.086)   // #0E1116
-    static let card       = Color(red: 0.090, green: 0.102, blue: 0.129)   // #171A21
+    static let bg         = Color(red: 0.075, green: 0.086, blue: 0.082)
+    static let card       = Color(red: 0.115, green: 0.129, blue: 0.122)
     static let cardStroke = Color.white.opacity(0.06)
     static let well       = Color.black.opacity(0.35)
 
-    /// The brand colour — the mascot's terracotta, rgb(202, 124, 94).
-    static let brand  = Color(red: 202/255, green: 124/255, blue: 94/255)  // #CA7C5E
+    static let brand  = Color(red: 0.73, green: 0.85, blue: 0.77)
 
     /// Severity runs warm: brand → amber → red. Nothing green anywhere, and
     /// colour only escalates when a limit is actually worth looking at.
@@ -22,20 +21,20 @@ enum Theme {
     static let pink   = Color(red: 0.941, green: 0.471, blue: 0.659)
     static let blue   = Color(red: 0.427, green: 0.561, blue: 0.918)
 
-    static let dim   = Color.white.opacity(0.55)
-    static let faint = Color.white.opacity(0.35)
+    static let dim   = Color.white.opacity(0.68)
+    static let faint = Color.white.opacity(0.48)
 
     /// Per-account accent colours, picked deterministically from the config dir.
-    static let palette: [Color] = [brand, pink, purple, blue, amber]
+    static let palette: [Color] = Array(repeating: brand, count: 5)
 
     /// How a usage percentage reads at a glance.
     static func vibe(_ percent: Double) -> (word: String, color: Color) {
         switch percent {
-        case ..<40:  return ("plenty left", brand)
-        case ..<70:  return ("cruising", brand)
-        case ..<85:  return ("watch it", amber)
-        case ..<95:  return ("almost cooked", ember)
-        default:     return ("cooked", alert)
+        case ..<70:  return ("Available", brand)
+        case ..<85:  return ("In use", brand)
+        case ..<95:  return ("Near limit", amber)
+        case ..<100: return ("Almost at limit", ember)
+        default:    return ("Limit reached", alert)
         }
     }
 }
@@ -63,26 +62,23 @@ struct Hairline: View {
     }
 }
 
-/// The two-tone wordmark. HY in white, DRA in neon, heavy and italic.
+/// Provider-neutral application title.
 struct Wordmark: View {
     var size: CGFloat = 15
     var body: some View {
-        HStack(spacing: 0) {
-            Text("CLAUDE").foregroundStyle(.white)
-            Text("SWITCH").foregroundStyle(Theme.brand)
-        }
-        .font(.system(size: size, weight: .black, design: .rounded))
-        .italic()
-        .tracking(0.5)
+        Text("Gauge")
+            .foregroundStyle(.white)
+            .font(.system(size: size, weight: .semibold))
+            .tracking(-0.5)
     }
 }
 
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text)
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .tracking(1.3)
+        Text(text.lowercased().prefix(1).uppercased() + text.lowercased().dropFirst())
+            .font(.system(size: 11, weight: .semibold))
+            .tracking(0.1)
             .foregroundStyle(Theme.faint)
     }
 }
@@ -95,11 +91,10 @@ struct Chip: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .bold, design: .rounded))
+            .font(.system(size: 9, weight: .medium))
             .padding(.horizontal, 7)
             .padding(.vertical, 2.5)
-            .background(Capsule().fill(color.opacity(filled ? 0.14 : 0)))
-            .overlay(Capsule().stroke(color.opacity(filled ? 0.45 : 0.35), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 4).fill(color.opacity(filled ? 0.10 : 0)))
             .foregroundStyle(color)
     }
 }
@@ -116,10 +111,11 @@ struct CircleButton: View {
                 .font(.system(size: size * 0.39, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(Circle().fill(Color.white.opacity(hovering ? 0.16 : 0.08)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(hovering ? 0.12 : 0.04)))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .accessibilityLabel(symbol == "arrow.clockwise" ? "Refresh usage" : "Manage accounts")
     }
 }
 
@@ -140,11 +136,11 @@ struct ActionButton: View {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(color)
-                Spacer(minLength: 0)
                 Text(title)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
+                    .layoutPriority(1)
                 Spacer(minLength: 0)
                 if showChevron {
                     Image(systemName: "chevron.right")
@@ -154,8 +150,7 @@ struct ActionButton: View {
             }
             .padding(.horizontal, 14)
             .frame(height: height)
-            .background(Capsule().fill(color.opacity(hovering ? 0.26 : 0.16)))
-            .overlay(Capsule().stroke(color.opacity(hovering ? 0.95 : 0.6), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 9).fill(color.opacity(hovering ? 0.24 : 0.12)))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -176,12 +171,12 @@ struct PillButton: View {
                 if let symbol {
                     Image(systemName: symbol).font(.system(size: 10, weight: .bold))
                 }
-                Text(title).font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                Text(title).font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(color)
             .padding(.horizontal, 12)
             .padding(.vertical, 6.5)
-            .background(Capsule().fill(Color.white.opacity(hovering ? 0.16 : 0.08)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(hovering ? 0.12 : 0.04)))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -223,30 +218,35 @@ struct MiniBar: View {
     private var color: Color { Theme.vibe(bar.percent).color }
 
     var body: some View {
-        HStack(spacing: 7) {
-            if showLabel {
-                Text(bar.label)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.faint)
-                    .lineLimit(1)
-                    .frame(width: 38, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if showLabel {
+                    Text(bar.label == "included" ? "Subscription" : bar.label)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let reset = bar.resetsAt {
+                    Text(relativeReset(reset)).font(.system(size: 9)).foregroundStyle(Theme.faint)
+                }
+                Text("\(Int(bar.percent.rounded()))%")
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(bar.percent >= 85 ? color : .white)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.09))
                     Capsule()
-                        .fill(LinearGradient(colors: [color.opacity(0.75), color],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(height, geo.size.width * min(1, bar.percent / 100)))
+                        .fill(color)
+                        .frame(width: geo.size.width * max(0, min(1, bar.percent / 100)))
                 }
             }
             .frame(height: height)
-            Text("\(Int(bar.percent.rounded()))%")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(bar.percent >= 85 ? color : Theme.dim)
-                .frame(width: 30, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(bar.label), \(Int(bar.percent.rounded())) percent used. \(relativeReset(bar.resetsAt))")
     }
 }
 
@@ -268,6 +268,7 @@ struct ToggleRow: View {
                 .toggleStyle(.switch)
                 .tint(Theme.brand)
                 .controlSize(.small)
+                .accessibilityLabel(title)
         }
     }
 }
@@ -280,6 +281,7 @@ struct WellField: View {
 
     var body: some View {
         TextField(placeholder, text: $text)
+            .accessibilityLabel(placeholder)
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium,
                           design: mono ? .monospaced : .default))
@@ -293,34 +295,69 @@ struct WellField: View {
 }
 
 
-// MARK: - Bundled artwork
+// MARK: - Provider-neutral identity
 
-enum Art {
-    private static func bundled(_ name: String, template: Bool) -> NSImage? {
-        guard let img = NSImage(named: name) else { return nil }
-        img.isTemplate = template
-        return img
-    }
-    /// Full-colour mascot for in-app chrome.
-    static let mascot = bundled("mascot", template: false)
-    /// Silhouette for the menu bar; macOS tints template images to match.
-    static let menuBar = bundled("menubar", template: true)
-}
-
-/// The mascot, falling back to a symbol if the bundle resource is missing.
-struct MascotMark: View {
+struct GaugeMark: View {
     var height: CGFloat = 17
     var body: some View {
-        if let m = Art.mascot {
-            Image(nsImage: m)
-                .interpolation(.none)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(height: height)
-        } else {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: height * 0.75))
-                .foregroundStyle(Theme.brand)
+        HStack(alignment: .bottom, spacing: height * 0.16) {
+            ForEach(0..<3) { index in
+                RoundedRectangle(cornerRadius: height * 0.08)
+                    .fill(Theme.brand.opacity(index == 2 ? 0.45 : 1))
+                    .frame(width: height * 0.22, height: height * [0.45, 1, 0.7][index])
+            }
         }
+        .frame(width: height, height: height)
+        .accessibilityHidden(true)
+    }
+}
+
+struct ProviderMark: View {
+    let provider: AIProvider
+    var size: CGFloat = 32
+
+    var body: some View {
+        Text(provider == .grok ? "x" : (provider == .codex ? "O" : "C"))
+            .font(.system(size: size * 0.48, weight: .medium, design: .serif))
+            .foregroundStyle(Theme.brand)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.26).fill(Theme.brand.opacity(0.08)))
+            .accessibilityLabel(provider.title)
+    }
+}
+
+struct ProviderFilter: View {
+    @Binding var selection: AIProvider?
+    let profiles: [Profile]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            option(nil, title: "All")
+            ForEach(AIProvider.allCases) { provider in
+                option(provider, title: provider.title)
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.035)))
+    }
+
+    private func option(_ provider: AIProvider?, title: String) -> some View {
+        let active = selection == provider
+        let count = profiles.filter { provider == nil || $0.provider == provider }.count
+        return Button { selection = provider } label: {
+            HStack(spacing: 5) {
+                Text(title).font(.system(size: 11, weight: active ? .semibold : .medium))
+                Text("\(count)").font(.system(size: 9, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(active ? Theme.brand : Theme.faint)
+            }
+            .foregroundStyle(active ? .white : Theme.dim)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7).fill(active ? Color.white.opacity(0.08) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count) accounts")
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Anthropic account a config dir is signed into, read from <dir>/.claude.json.
+/// Non-secret account identity supplied by a provider.
 struct Account: Equatable {
     var email: String
     var displayName: String
@@ -37,7 +37,7 @@ struct Credential: Equatable {
 
     /// "Max 20x" / "Max 5x" / "Pro"
     var tierLabel: String {
-        let sub = subscriptionType.capitalized
+        let sub = subscriptionType.capitalized.replacingOccurrences(of: "Supergrok", with: "SuperGrok")
         if let r = rateLimitTier.range(of: #"(\d+)x"#, options: .regularExpression) {
             return "\(sub) \(rateLimitTier[r])"
         }
@@ -46,7 +46,7 @@ struct Credential: Equatable {
 }
 
 /// One rate-limit window from /api/oauth/usage.
-struct LimitBar: Identifiable, Equatable {
+struct LimitBar: Identifiable, Equatable, Codable {
     var id: String { kind }
     var kind: String        // "5h", "week", or a scoped label like "Opus"
     var label: String
@@ -55,7 +55,7 @@ struct LimitBar: Identifiable, Equatable {
     var severity: String    // normal | warning | critical
 }
 
-struct UsageSnapshot: Equatable {
+struct UsageSnapshot: Equatable, Codable {
     var bars: [LimitBar]
     var fetchedAt: Date
     var error: String?
@@ -76,7 +76,7 @@ struct UsageSnapshot: Equatable {
     }
 }
 
-/// A Claude Code config directory and everything ClaudeSwitch knows about it.
+/// A provider's configuration directory and its account/usage metadata.
 struct Profile: Identifiable, Equatable {
     var configDir: String              // absolute path
     var isDefault: Bool                // ~/.claude — launched with no CLAUDE_CONFIG_DIR
@@ -87,8 +87,10 @@ struct Profile: Identifiable, Equatable {
     var workingDir: String?            // launch cwd override
     var command: String                // what to run in the terminal
     var usage: UsageSnapshot?
+    var provider: AIProvider = .claude
 
-    var id: String { configDir }
+    var id: String { provider.profileID(for: configDir) }
+    var usageKey: String { provider == .claude ? keychainService : id }
 
     /// Keychain service name Claude Code uses for this dir.
     /// The default dir (launched without CLAUDE_CONFIG_DIR) uses the bare name;

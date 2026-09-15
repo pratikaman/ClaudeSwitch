@@ -6,16 +6,28 @@ import AppKit
 final class AppState: ObservableObject {
     @Published var profiles: [Profile] = []
     @Published var orphans: [OrphanEntry] = []
-    @Published var prefs: Prefs = .load()
+    @Published var prefs: Prefs = Prefs()
     @Published var isRefreshing = false
     @Published var lastError: String?
     @Published var managerTab = 0
+    @Published var providerFilter: AIProvider?
+    var visibleProfiles: [Profile] {
+        profiles.filter { providerFilter == nil || $0.provider == providerFilter }
+    }
     /// Recent resumable conversations, keyed by config dir.
     @Published var sessions: [String: [RecentSession]] = [:]
     @Published var notifyStatus: String = ""
     private var pollTimer: Timer?
+    private let isPreview: Bool
 
-    init() {
+    init(previewProfiles: [Profile]? = nil) {
+        isPreview = previewProfiles != nil
+        if let previewProfiles {
+            profiles = previewProfiles
+            prefs.notifyEnabled = false
+            return
+        }
+        prefs = .load()
         if !prefs.terminal.isInstalled, let first = TerminalApp.installed.first {
             prefs.terminal = first
             prefs.save()
@@ -28,6 +40,7 @@ final class AppState: ObservableObject {
     // MARK: - Discovery
 
     func reload() {
+        guard !isPreview else { return }
         let aliasMap = Discovery.aliases()
         let dirs = Discovery.configDirs(extraPaths: prefs.extraPaths)
 
@@ -51,16 +64,30 @@ final class AppState: ObservableObject {
             built.append(p)
         }
 
+        for provider in [AIProvider.codex, .grok] {
+            let paths = provider == .codex ? prefs.codexPaths : prefs.grokPaths
+            for dir in CLIAccountDiscovery.configDirs(extraPaths: paths, provider: provider) {
+                let ov = prefs.overrides[provider.profileID(for: dir)] ?? ProfileOverride()
+                guard !ov.hidden else { continue }
+                let previous = profiles.first { $0.provider == provider && $0.configDir == dir }
+                built.append(Profile(configDir: dir, isDefault: dir == provider.defaultDir,
+                                     name: ov.name ?? provider.derivedName(for: dir),
+                                     account: previous?.account, credential: previous?.credential,
+                                     workingDir: ov.workingDir, command: ov.command ?? provider.rawValue,
+                                     usage: previous?.usage, provider: provider))
+            }
+        }
+
         built.sort { a, b in
-            let oa = prefs.overrides[a.configDir]?.order ?? (a.isDefault ? -1 : 0)
-            let ob = prefs.overrides[b.configDir]?.order ?? (b.isDefault ? -1 : 0)
-            return (oa, a.name) < (ob, b.name)
+            let oa = prefs.overrides[a.id]?.order ?? (a.isDefault ? -1 : 0)
+            let ob = prefs.overrides[b.id]?.order ?? (b.isDefault ? -1 : 0)
+            return (a.provider.rawValue, oa, a.name) < (b.provider.rawValue, ob, b.name)
         }
 
         profiles = built
         if prefs.showRecentSessions {
             var found: [String: [RecentSession]] = [:]
-            for profile in built {
+            for profile in built where profile.provider == .claude {
                 found[profile.configDir] = Sessions.recent(in: profile.configDir, limit: 5)
             }
             sessions = found
@@ -74,9 +101,9 @@ final class AppState: ObservableObject {
 
     /// Credential entries in the keychain with no matching config dir on disk.
     func recomputeOrphans() {
-        let known = Set(profiles.map(\.keychainService))
+        let known = Set(profiles.filter { $0.provider == .claude }.map(\.keychainService))
         // Also treat dirs the user hid as "known" so we don't offer to nuke them.
-        let hidden = Set(prefs.overrides.filter(\.value.hidden).keys.map {
+        let hidden = Set(prefs.overrides.filter { $0.value.hidden && $0.key.hasPrefix("/") }.keys.map {
             $0 == Discovery.defaultDir ? Keychain.servicePrefix
                                        : "\(Keychain.servicePrefix)-\(sha256Prefix8($0))"
         })
@@ -88,21 +115,43 @@ final class AppState: ObservableObject {
     // MARK: - Usage
 
     func hydrateUsageFromCache() async {
-        for i in profiles.indices {
-            profiles[i].usage = await UsageClient.shared.cached(forService: profiles[i].keychainService)
+        for profile in profiles where profile.provider == .claude {
+            let cached = await UsageClient.shared.cached(forService: profile.keychainService)
+            if let i = profiles.firstIndex(where: { $0.id == profile.id }), profiles[i].usage == nil {
+                profiles[i].usage = cached
+            }
         }
     }
 
     func refreshUsage(force: Bool = false) async {
-        guard prefs.showUsageInMenu else { return }
+        guard !isPreview, prefs.showUsageInMenu, !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         // Sequential, and paced: the usage endpoint 429s on back-to-back calls,
         // which was enough to blank a second account on every refresh.
         var networkCalls = 0
-        for i in profiles.indices where profiles[i].isSignedIn {
-            let service = profiles[i].keychainService
+        // Iterate a value snapshot: reloading accounts during an await must not
+        // invalidate indices or apply a response to another profile.
+        for profile in profiles {
+            if profile.provider != .claude {
+                let reading: ProviderReading
+                if profile.provider == .codex {
+                    reading = await CodexClient.shared.reading(home: profile.configDir,
+                                                              ttl: prefs.usageTTLSeconds, force: force)
+                } else {
+                    reading = await GrokClient.shared.reading(home: profile.configDir,
+                                                             ttl: prefs.usageTTLSeconds, force: force)
+                }
+                if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
+                    profiles[idx].account = reading.account
+                    profiles[idx].credential = reading.credential
+                    profiles[idx].usage = reading.usage
+                }
+                continue
+            }
+            guard profile.isSignedIn else { continue }
+            let service = profile.keychainService
             let willHitNetwork = await UsageClient.shared.needsFetch(
                 forService: service, ttl: prefs.usageTTLSeconds, force: force)
             if willHitNetwork && networkCalls > 0 {
@@ -112,7 +161,7 @@ final class AppState: ObservableObject {
             let snap = await UsageClient.shared.usage(forService: service,
                                                       ttl: prefs.usageTTLSeconds,
                                                       force: force)
-            if let idx = profiles.firstIndex(where: { $0.keychainService == service }) {
+            if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
                 profiles[idx].usage = snap
             }
         }
@@ -129,9 +178,9 @@ final class AppState: ObservableObject {
         let threshold = prefs.notifyThreshold
 
         for profile in profiles where profile.isSignedIn {
-            guard let bars = profile.usage?.bars else { continue }
+            guard profile.usage?.error == nil, let bars = profile.usage?.bars else { continue }
             for bar in bars {
-                let key = "\(profile.keychainService)|\(bar.kind)"
+                let key = "\(profile.usageKey)|\(bar.kind)"
                 let now = bar.percent
                 let previous = seen[key]
                 seen[key] = now
@@ -140,12 +189,12 @@ final class AppState: ObservableObject {
                 if previous < threshold, now >= threshold {
                     let when = bar.resetsAt.map { " · \(relativeReset($0))" } ?? ""
                     await Notifier.shared.post(
-                        title: "\(profile.name) is at \(Int(now.rounded()))%",
+                        title: "\(profile.provider.title) · \(profile.name) is at \(Int(now.rounded()))%",
                         body: "\(bar.label) limit\(when)",
                         id: "\(key)-high")
                 } else if prefs.notifyOnReset, previous >= threshold, now < threshold {
                     await Notifier.shared.post(
-                        title: "\(profile.name) has room again",
+                        title: "\(profile.provider.title) · \(profile.name) has room again",
                         body: "\(bar.label) dropped to \(Int(now.rounded()))%.",
                         id: "\(key)-reset")
                 }
@@ -179,14 +228,14 @@ final class AppState: ObservableObject {
         Task {
             let granted = await Notifier.shared.requestAuthorization()
             let status = await Notifier.shared.authorizationStatus()
-            notifyStatus = granted ? "" : "not allowed (\(Notifier.name(status))) — enable ClaudeSwitch in System Settings › Notifications"
+            notifyStatus = granted ? "" : "not allowed (\(Notifier.name(status))) — enable Gauge in System Settings › Notifications"
         }
     }
 
     func sendTestNotification() {
         Task {
             if let error = await Notifier.shared.post(
-                title: "ClaudeSwitch",
+                title: "Gauge",
                 body: "This is what a limit alert looks like.",
                 id: "manual-test-\(Int(Date().timeIntervalSince1970))") {
                 notifyStatus = error
@@ -200,9 +249,10 @@ final class AppState: ObservableObject {
     // MARK: - Resume
 
     func resume(_ session: RecentSession, in profile: Profile) {
+        guard profile.provider == .claude else { return }
         lastError = Launcher.resume(session, profile: profile, prefs: prefs)
         if lastError == nil {
-            prefs.lastUsed[profile.configDir] = Date()
+            prefs.lastUsed[profile.id] = Date()
             prefs.save()
         }
     }
@@ -210,9 +260,10 @@ final class AppState: ObservableObject {
     // MARK: - Launching
 
     func launch(_ profile: Profile) {
+        guard checkCLI(for: profile.provider) else { return }
         lastError = Launcher.launch(profile, prefs: prefs)
         if lastError == nil {
-            prefs.lastUsed[profile.configDir] = Date()
+            prefs.lastUsed[profile.id] = Date()
             prefs.save()
         }
     }
@@ -221,7 +272,7 @@ final class AppState: ObservableObject {
     /// Worth surfacing — two profiles is not two allowances.
     func quotaSiblings(of profile: Profile) -> [Profile] {
         guard let uuid = profile.account?.accountUuid, !uuid.isEmpty else { return [] }
-        return profiles.filter { $0.configDir != profile.configDir && $0.account?.accountUuid == uuid }
+        return profiles.filter { $0.provider == profile.provider && $0.id != profile.id && $0.account?.accountUuid == uuid }
     }
 
     /// True when any signed-in account has crossed the alert threshold. Drives
@@ -244,51 +295,70 @@ final class AppState: ObservableObject {
     /// Highest weekly usage across signed-in accounts, for the menu bar readout.
     var menuBarPercent: Double? {
         let recent = profiles
-            .filter { $0.isSignedIn && $0.weeklyPercent != nil }
-            .max { (prefs.lastUsed[$0.configDir] ?? .distantPast) < (prefs.lastUsed[$1.configDir] ?? .distantPast) }
-        return recent?.weeklyPercent
+            .filter { $0.isSignedIn && $0.tightestBar != nil }
+            .max { (prefs.lastUsed[$0.id] ?? .distantPast) < (prefs.lastUsed[$1.id] ?? .distantPast) }
+        return recent?.weeklyPercent ?? recent?.tightestBar?.percent
     }
 
     func signIn(_ profile: Profile) {
+        guard checkCLI(for: profile.provider) else { return }
         lastError = Launcher.signIn(profile, prefs: prefs)
+    }
+
+    private func checkCLI(for provider: AIProvider) -> Bool {
+        guard provider != .claude, provider.executable == nil else { return true }
+        lastError = "Install \(provider.title)\(provider == .grok ? " Build" : "") CLI to connect this account"
+        return false
     }
 
     // MARK: - Profile management
 
     /// Creates a new config dir and opens the login flow in a terminal.
-    func addProfile(name rawName: String) {
+    func addProfile(name rawName: String, provider: AIProvider = .claude) {
+        guard checkCLI(for: provider) else { return }
         let name = rawName.trimmingCharacters(in: .whitespaces)
             .replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "-", options: .regularExpression)
         guard !name.isEmpty else { lastError = "name required"; return }
 
-        let dir = NSHomeDirectory() + "/.claude-" + name
+        let dir = NSHomeDirectory() + "/.\(provider.rawValue)-" + name
         if FileManager.default.fileExists(atPath: dir) {
             lastError = "\(dir.abbreviatingTilde) already exists"
             return
         }
         do {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: false)
-            // A stub settings.json makes the dir discoverable before first login.
-            try "{}\n".write(toFile: dir + "/settings.json", atomically: true, encoding: .utf8)
+            let filename = provider == .claude ? "settings.json" : "config.toml"
+            let contents = provider == .claude ? "{}\n" : "# \(provider.title) account\n"
+            try contents.write(toFile: dir + "/" + filename, atomically: true, encoding: .utf8)
         } catch {
             lastError = error.localizedDescription
             return
         }
 
-        var ov = prefs.overrides[dir] ?? ProfileOverride()
+        let profileID = provider.profileID(for: dir)
+        var ov = prefs.overrides[profileID] ?? ProfileOverride()
         ov.name = name
-        prefs.overrides[dir] = ov
+        prefs.overrides[profileID] = ov
         prefs.save()
         reload()
 
-        if let fresh = profiles.first(where: { $0.configDir == dir }) {
+        if let fresh = profiles.first(where: { $0.id == profileID }) {
             // No credentials yet, so run plain `claude` — it starts the login flow.
-            lastError = Launcher.launch(fresh, prefs: prefs, overrideCommand: "command claude")
+            lastError = Launcher.signIn(fresh, prefs: prefs)
         }
     }
 
     /// Removes a profile. The directory goes to the Trash, never rm -rf.
     func removeProfile(_ profile: Profile, deleteDirectory: Bool, deleteCredential: Bool) {
+        // These CLIs own their auth stores. Removing them here only hides them.
+        if profile.provider != .claude {
+            var ov = prefs.overrides[profile.id] ?? ProfileOverride()
+            ov.hidden = true
+            prefs.overrides[profile.id] = ov
+            prefs.save()
+            reload()
+            return
+        }
         if profile.isDefault {
             lastError = "the default ~/.claude profile can't be removed"
             return
@@ -344,15 +414,15 @@ final class AppState: ObservableObject {
     /// call reload() — that re-reads every config dir and shells out to
     /// /usr/bin/security once per profile.
     func update(_ profile: Profile, _ mutate: (inout ProfileOverride) -> Void) {
-        var ov = prefs.overrides[profile.configDir] ?? ProfileOverride()
+        var ov = prefs.overrides[profile.id] ?? ProfileOverride()
         mutate(&ov)
-        prefs.overrides[profile.configDir] = ov
+        prefs.overrides[profile.id] = ov
         prefs.save()
 
-        guard let i = profiles.firstIndex(where: { $0.configDir == profile.configDir }) else { return }
+        guard let i = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
         if let name = ov.name, !name.isEmpty { profiles[i].name = name }
-        else { profiles[i].name = Discovery.derivedName(for: profile.configDir) }
-        profiles[i].command = ov.command ?? prefs.defaultCommand
+        else { profiles[i].name = profile.provider.derivedName(for: profile.configDir) }
+        profiles[i].command = ov.command ?? profile.provider.defaultCommand(prefs: prefs)
         profiles[i].workingDir = ov.workingDir
     }
 
@@ -363,23 +433,27 @@ final class AppState: ObservableObject {
 
     // MARK: - Shell aliases
 
-    /// Appends an alias for a profile into a ClaudeSwitch-managed block in ~/.zshrc.
+    /// Appends an alias for a profile into a Gauge-managed block in ~/.zshrc.
     /// Existing hand-written aliases are left completely alone.
     func writeAlias(for profile: Profile, named alias: String) {
+        guard alias.range(of: #"^[A-Za-z_][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil else {
+            lastError = "Use letters, numbers, underscores, or hyphens for an alias; start with a letter or underscore"
+            return
+        }
         let rc = NSHomeDirectory() + "/.zshrc"
-        let begin = "# >>> claudeswitch aliases >>>"
-        let end = "# <<< claudeswitch aliases <<<"
-
         var text = (try? String(contentsOfFile: rc, encoding: .utf8)) ?? ""
+        let marker = text.contains("# >>> claudeswitch aliases >>>") ? "claudeswitch" : "gauge"
+        let begin = "# >>> \(marker) aliases >>>"
+        let end = "# <<< \(marker) aliases <<<"
 
         // Back up before touching the user's shell config.
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "")
-        try? text.write(toFile: rc + ".claudeswitch-bak-" + stamp, atomically: true, encoding: .utf8)
+        try? text.write(toFile: rc + ".gauge-bak-" + stamp, atomically: true, encoding: .utf8)
 
         let line = profile.isDefault
-            ? "alias \(alias)=\(shellQuote(profile.command))"
-            : "alias \(alias)=\(shellQuote("CLAUDE_CONFIG_DIR=\(profile.configDir) command \(profile.command)"))"
+            ? "alias \(alias)=\(shellQuote("env -u \(profile.provider.environmentKey) \(profile.command)"))"
+            : "alias \(alias)=\(shellQuote("\(profile.provider.environmentKey)=\(shellQuote(profile.configDir)) command \(profile.command)"))"
 
         if let b = text.range(of: begin), let e = text.range(of: end) {
             var block = String(text[b.upperBound..<e.lowerBound])

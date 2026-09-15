@@ -3,7 +3,7 @@ import AppKit
 import UserNotifications
 
 @main
-struct ClaudeSwitchApp: App {
+struct GaugeApp: App {
     @StateObject private var state = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
@@ -13,14 +13,10 @@ struct ClaudeSwitchApp: App {
                 .environmentObject(state)
                 .task { state.startPolling() }
         } label: {
-            // Glanceable: the bolt, plus the weekly burn of whichever account
+            // Glanceable: the usage meter, plus the usage of whichever account
             // you launched last.
             HStack(spacing: 3) {
-                if let glyph = Art.menuBar {
-                    Image(nsImage: glyph)
-                } else {
-                    Image(systemName: "bolt.fill")
-                }
+                Image(systemName: "chart.bar.fill")
                 if state.anyAccountAtLimit {
                     Text("!")
                 } else if state.prefs.showPercentInMenuBar, let pct = state.menuBarPercent {
@@ -30,7 +26,7 @@ struct ClaudeSwitchApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("ClaudeSwitch", id: "manager") {
+        Window("Gauge", id: "manager") {
             ManagerView()
                 .environmentObject(state)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
@@ -49,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Verification hook: notifications can't be clicked in an LSUIElement
         // app, so this writes the authorization + delivery result to disk.
-        if ProcessInfo.processInfo.environment["CLAUDESWITCH_NOTIFY_SELFTEST"] == "1" {
+        if ProcessInfo.processInfo.environment["GAUGE_NOTIFY_SELFTEST"] == "1" {
             Task { @MainActor in await Notifier.shared.selfTest() }
         }
     }

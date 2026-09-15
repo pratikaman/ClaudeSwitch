@@ -6,7 +6,7 @@ import CryptoKit
 /// Claude Code stamps these into the environment of the session it runs in.
 ///
 /// `open` hands the launching process's environment to whatever it starts, so an
-/// ClaudeSwitch that was itself launched from inside a Claude session passes them on to
+/// Gauge that was itself launched from inside a Claude session passes them on to
 /// every terminal it spawns. That is not cosmetic:
 ///
 ///  * `CLAUDE_CODE_CHILD_SESSION` makes the new session think it is a child and
@@ -56,7 +56,7 @@ func run(_ path: String, _ args: [String], timeout: TimeInterval = 15) -> RunRes
     p.standardError = err
     // Never pass our own Claude session state to anything we spawn. The
     // generated launch script unsets these too, so this is belt and braces for
-    // however ClaudeSwitch itself was started.
+    // however Gauge itself was started.
     var env = ProcessInfo.processInfo.environment
     env.removeValue(forKey: "CLAUDE_CONFIG_DIR")
     for key in claudeSessionMarkers { env.removeValue(forKey: key) }
